@@ -1,0 +1,638 @@
+‘====================================
+‘13.3. Modifying Recorded Code
+Sub Prepare_Pivot()
+'
+' Prepare_Pivot Macro
+' AutoFormat, refresh data, preview
+' Keyboard Shortcut: Ctrl+Shift+P
+'
+    Sheets("BillingPivot").Select
+    Range("A3").Select
+    ActiveSheet.PivotTables("PivotTable6").PivotSelect "", xlDataAndLabel, True
+    ActiveSheet.PivotTables("PivotTable6").Format xlReport6
+    ActiveSheet.PivotTables("PivotTable6").PivotCache.Refresh
+    ActiveWindow.SelectedSheets.PrintPreview
+End Sub
+‘====================================
+‘13.4. Showing Top 10 Items over a Set Amount
+    Sub TopNCalculate()
+    Dim ws As Worksheet
+    Dim pt As PivotTable
+    Dim pf As PivotField
+    Dim df As PivotField
+    Dim pi As PivotItem
+    Dim rng As Range
+    Dim SortOrder As Long
+    Dim SortField As String
+    Dim Amt As Long
+    Dim piCount As Long
+    
+    On Error GoTo err_Handler
+    Set ws = ActiveSheet
+    Set pt = ws.PivotTables(1)
+    Set df = pt.PivotFields("Sum of Dollars") 'data field
+    Set pf = pt.PivotFields("Salesperson") 'row field
+    Amt = ws.Range("MinAmt").Value
+    piCount = 0
+    Application.ScreenUpdating = False
+    
+    'determine the current sort order and field
+    SortOrder = pf.AutoSortOrder
+    SortField = pf.AutoSortField
+    pf.AutoSort xlManual, SortField 'manual to prevent errors
+    pf.AutoShow xlManual, xlTop, 1, df  'manual turns off AutoShow
+    
+    For Each pi In pf.PivotItems
+        pi.Visible = True
+        Set rng = pt.GetPivotData(df.Value, pf.Value, pi.Name)
+        If rng.Value >= CLng(Amt) Then
+            piCount = piCount + 1  'count items that qualify
+        End If
+    Next pi
+        
+    If piCount > 0 Then
+        If piCount = pf.PivotItems.Count Then
+            MsgBox "All items exceed entered amount"
+        Else
+            pf.AutoShow xlAutomatic, xlTop, piCount, df
+        End If
+    Else
+        MsgBox "No items exceed entered amount"
+    End If
+        
+exit_Handler:
+    pf.AutoSort SortOrder, SortField 'restore the AutoSort settings
+    Application.ScreenUpdating = True
+    Exit Sub
+
+err_Handler:
+  MsgBox Err.Number & ": " & Err.Description
+  GoTo exit_Handler
+End Sub
+‘====================================
+‘13.5. Changing the Summary Function for All Data Fields
+Sub SumAllDataFields()
+  Dim pt As PivotTable
+  Dim pf As PivotField
+  Dim ws As Worksheet
+  
+  Set ws = ActiveSheet
+  Set pt = ws.PivotTables(1)
+  Application.ScreenUpdating = False
+  
+    pt.ManualUpdate = True
+    For Each pf In pt.DataFields
+      pf.Function = xlSum
+    Next pf
+    pt.ManualUpdate = False
+  
+  Application.ScreenUpdating = True
+End Sub
+‘====================================
+‘13.6. Hiding Rows with a Zero Total for Calculated Items
+Sub HideZeroRows()
+  Dim pt As PivotTable
+  Dim DataRow As Range
+  Dim ZeroCount As Long
+  Dim BlankCount As Long
+
+  Set pt = ActiveSheet.PivotTables(1)
+
+  Application.ScreenUpdating = False
+  For Each DataRow In pt.DataBodyRange.Rows
+    ZeroCount = Application.WorksheetFunction.CountIf(DataRow, 0)
+    BlankCount = Application.WorksheetFunction.CountBlank(DataRow)
+    If ZeroCount + BlankCount = DataRow.Cells.Count Then
+      DataRow.EntireRow.Hidden = True
+    Else
+      DataRow.EntireRow.Hidden = False
+    End If
+  Next DataRow
+  Application.ScreenUpdating = True
+End Sub
+‘====================================
+Sub UnhideAllRows()
+  Dim DataRow As Range
+  Dim pt As PivotTable
+  Set pt = ActiveSheet.PivotTables(1)
+
+  Application.ScreenUpdating = False
+  For Each DataRow In pt.DataBodyRange.Rows
+    DataRow.EntireRow.Hidden = False
+  Next DataRow
+  Application.ScreenUpdating = True
+
+End Sub
+‘====================================
+‘13.7. Hiding All Pivot Field Subtotals
+Sub HideAllPTSubtotals()
+  Dim pt As PivotTable
+  Dim pf As PivotField
+  
+  On Error Resume Next
+  
+  Set pt = ActiveSheet.PivotTables(1)
+
+  Application.ScreenUpdating = False
+  pt.ManualUpdate = True
+  For Each pf In pt.PivotFields
+    pf.Subtotals(1) = True
+    pf.Subtotals(1) = False
+  Next pf
+  pt.ManualUpdate = False
+
+  Application.ScreenUpdating = True
+End Sub
+‘====================================
+‘13.8. Naming and Formatting the Drill to Details Sheet
+Private Sub Worksheet_BeforeDoubleClick(ByVal Target As Range, _
+    Cancel As Boolean)
+  Dim pt As PivotTable
+
+  If Me.PivotTables.Count = 0 Then Exit Sub
+  For Each pt In Me.PivotTables
+    If Not Intersect(Target, pt.DataBodyRange) Is Nothing Then
+      SheetType = "Drill"
+      Exit For
+    End If
+  Next pt
+End Sub
+‘====================================
+Private Sub Workbook_NewSheet(ByVal Sh As Object)
+  On Error GoTo err_Handler
+  Select Case SheetType
+    Case "Drill"  'Drill to Details
+      Sh.Range("A1").CurrentRegion.AutoFormat _
+          Format:=xlRangeAutoFormatClassic1
+      Sh.Name = Left("XDrill_" & Sh.Name, 31)
+    Case Else
+      'do nothing
+  End Select
+  SheetType = ""
+err_Handler:
+  Exit Sub
+End Sub
+‘====================================
+‘13.9. Automatically Deleting Worksheets When Closing a Workbook
+Private Sub Workbook_NewSheet(ByVal Sh As Object)
+  If TypeName(Sh)="Worksheet" Then
+    If Sh.PivotTables.Count > 0 Then
+      Sh.Name = Left("XShow_" & Sh.Name, 31)
+    End If
+  End If
+End Sub
+‘
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+  Dim ws As Worksheet
+  Dim Resp As Long
+  Dim ShowCount As Long
+
+  ShowCount = 0
+  For Each ws In ThisWorkbook.Worksheets
+    If UCase(Left(ws.Name, 5)) = "XSHOW" Then
+      ShowCount = ShowCount + 1
+    End If
+  Next ws
+
+  If ShowCount > 0 Then
+    Resp = MsgBox("Delete Show Pages sheets?",  _
+                vbYesNo, "Delete Sheets?")
+    If Resp = vbYes Then
+      Application.DisplayAlerts = False
+      For Each ws In ThisWorkbook.Worksheets
+        If UCase(Left(ws.Name, 5)) = "XSHOW" Then
+          ws.Delete
+        End If
+      Next ws
+    End If
+  End If
+End Sub
+‘====================================
+‘13.10. Changing the Page Field Selection in Related Tables
+Private Sub Worksheet_PivotTableUpdate(ByVal Target As PivotTable)
+  Dim wsOther As Worksheet
+  Dim pt As PivotTable
+  Dim strPage As String
+
+  On Error GoTo err_Handler
+
+  Set wsOther = Worksheets("PivotOther") 'second PT sheet name
+  strPage = "Salesperson"                'page field name
+
+  Application.EnableEvents = False
+
+  If UCase(Target.PivotFields(strPage).CurrentPage) _
+     <> UCase(mstrPage) Then
+    mstrPage = Target.PivotFields(strPage).CurrentPage
+    For Each pt In wsOther.PivotTables
+      pt.PageFields(strPage).CurrentPage = mstrPage
+    Next pt
+  End If
+
+err_Handler:
+  Application.EnableEvents = True
+End Sub
+‘====================================
+‘13.11. Clearing Old Items from Field Dropdown Lists
+Sub SetMissingItemsLimit()
+  Dim pc As PivotCache
+
+    For Each pc In ActiveWorkbook.PivotCaches
+      pc.MissingItemsLimit = xlMissingItemsNone
+      pc.Refresh
+    Next pc
+End Sub
+‘====================================
+‘13.12. Hiding All Items in a Pivot Field
+Sub HideVisiblePivotItems()
+  Dim pt As PivotTable
+  Dim pf As PivotField
+  Dim pi As PivotItem
+  Dim SortOrder As Long
+  Dim SortField As String
+  Dim ws As Worksheet
+  
+  On Error Resume Next
+  
+  Set ws = ActiveSheet
+
+  Application.ScreenUpdating = False
+  Application.DisplayAlerts = False
+
+  For Each pt In ws.PivotTables
+    pt.ManualUpdate = True
+    For Each pf In pt.RowFields
+      SortOrder = pf.AutoSortOrder
+      SortField = pf.AutoSortField
+      pf.AutoSort SortOrder, SortField
+      For Each pi In pf.PivotItems
+        pi.Visible = False
+      Next pi
+      pf.AutoSort SortOrder, SortField
+    Next pf
+  Next pt
+
+exit_Handler:
+  Application.ScreenUpdating = True
+  Exit Sub
+err_Handler:
+  MsgBox Err.Number & ": " & Err.Description
+  GoTo exit_Handler
+End Sub 
+‘====================================
+‘13.13. Changing Content in the Data Area
+Sub ChangePTData()
+  Dim pt As PivotTable
+
+  Set pt = ActiveSheet.PivotTables(1)
+  pt.EnableDataValueEditing = True
+End Sub
+‘====================================
+‘13.14. Identifying a Pivot Table’s Pivot Cache
+Sub ViewCacheIndex()
+  Dim pcIndex As Long
+  On Error GoTo err_Handler
+  pcIndex = ActiveCell.PivotTable.CacheIndex
+  MsgBox "PivotCache: " & pcIndex
+  Exit Sub
+err_Handler:
+  MsgBox "Active cell is not in a pivot table"
+End Sub
+‘====================================
+‘13.15. Changing a Pivot Table’s Pivot Cache
+Sub SetCacheIndex()
+  On Error GoTo err_Handler
+  ActiveCell.PivotTable.CacheIndex = 2
+  Exit Sub
+err_Handler:
+  MsgBox "Cache index could not be changed"
+End Sub
+‘====================================
+Sub ChangeAllPivotCaches()
+  Dim pt As PivotTable
+  Dim ws As Worksheet
+  On Error GoTo err_Handler
+
+  For Each ws In ActiveWorkbook.Worksheets
+    For Each pt In ws.PivotTables
+      pt.CacheIndex = ActiveCell.PivotTable.CacheIndex
+    Next pt
+  Next ws
+  Exit Sub
+err_Handler:
+  MsgBox "Cache index could not be changed"
+End Sub
+‘====================================
+‘13.16. Identifying the Query Used as the Data Source
+Sub ListConnection()
+  Dim pt As PivotTable
+  Dim ws As Worksheet
+  On Error GoTo err_Handler
+
+  Set pt = ActiveCell.PivotTable
+  Set ws = Worksheets("Connection")
+
+  ws.Cells.ClearContents
+  ws.Cells(2, 1).Value = pt.PivotCache.Connection
+  ws.Cells(3, 1).Value = pt.PivotCache.CommandText
+  Exit Sub
+  
+err_Handler:
+  MsgBox "Connection could not be shown"
+End Sub
+‘====================================
+Sub UpdateConnection()
+  Dim pt As PivotTable
+  Dim ws As Worksheet
+  On Error Resume Next
+  
+  Set ws = Worksheets("Connection")
+  Set pt = ActiveCell.PivotTable
+
+  pt.PivotCache.Connection = ws.Cells(2, 1).Value
+  pt.RefreshTable
+  
+End Sub
+‘====================================
+‘13.17. Refreshing a Pivot Table on a Protected Sheet
+Sub RefreshPivot()
+  ActiveSheet.Unprotect
+  Range("B1").Select
+  ActiveSheet.PivotTables("BillingPivot").PivotCache.Refresh
+  ActiveSheet.Protect DrawingObjects:=True, _
+    Contents:=True, Scenarios:=True
+End Sub
+‘====================================
+Sub RefreshPivot()
+  ActiveSheet.Unprotect Password:="pwd"
+  Range("B1").Select
+  ActiveSheet.PivotTables("BillingPivot").PivotCache.Refresh
+  ActiveSheet.Protect Password:="pwd", _
+    DrawingObjects:=True, Contents:=True, Scenarios:=True
+End Sub
+‘====================================
+‘13.18. Refreshing Automatically When Source Data Changes 
+Private Sub Worksheet_Change(ByVal Target As Range)
+  Worksheets("Pivot").PivotTables(1).PivotCache.Refresh
+End Sub
+‘====================================
+‘13.19. Preventing Selection of (All) in a Page Field
+Private Sub Worksheet_PivotTableUpdate(ByVal Target As PivotTable)
+  Dim pf As PivotField
+  Dim i As Long
+
+  Application.EnableEvents = False
+  Application.ScreenUpdating = False
+
+  For Each pf In Target.PageFields
+    If pf.CurrentPage = "(All)" Then
+      i = 1
+      For i = 1 To pf.PivotItems.Count + 1
+        On Error Resume Next
+        pf.CurrentPage = pf.PivotItems(i).Name
+        If Err.Number = 0 Then
+          Exit For
+        End If
+      Next i
+      MsgBox "The (All) option is not available"
+    End If
+  Next pf
+
+err_Handler:
+  Application.EnableEvents = True
+  Application.ScreenUpdating = True
+End Sub
+‘====================================
+‘13.20. Disabling Pivot Field Dropdowns 	
+Sub DisableSelection()
+  Dim pt As PivotTable
+  Dim pf As PivotField
+
+  Set pt = ActiveSheet.PivotTables(1)
+
+  For Each pf In pt.PivotFields
+    pf.EnableItemSelection = False
+  Next pf
+End Sub   
+‘====================================
+‘13.21. Preventing Layout Changes in a Pivot Table
+Sub RestrictPTDrag()
+  Dim pt As PivotTable
+  Dim pf As PivotField
+
+  Set pt = ActiveSheet.PivotTables(1)
+
+  For Each pf In pt.PivotFields
+    With pf
+      If .Name <> "Data" Then
+        .DragToPage = False
+        .DragToRow = False
+        .DragToColumn = False
+        .DragToData = False
+        .DragToHide = False
+      End If
+    End With
+  Next pf 
+End Sub
+‘====================================
+‘13.22. Preventing Changes to the Pivot Table 
+Sub RestrictPTChanges()
+  Dim pt As PivotTable
+  Dim pf As PivotField
+
+  Set pt = ActiveSheet.PivotTables(1)
+
+  With pt
+    .EnableWizard = False
+    .EnableDrilldown = False
+    .EnableFieldList = False
+    .EnableFieldDialog = False
+    .PivotCache.EnableRefresh = False
+  End With 
+End Sub
+‘====================================
+‘13.23. Viewing Information on Pivot Caches
+Sub ListPivotCacheInfo()
+  Dim pc As PivotCache
+  Dim wb As Workbook
+  Dim ws As Worksheet
+  Dim CountRow As Long
+
+  CountRow = 1
+  Set wb = ActiveWorkbook
+
+  On Error Resume Next
+  Application.DisplayAlerts = False
+  Worksheets("Cache_Info").Delete
+  Application.DisplayAlerts = True
+  On Error GoTo 0
+
+  Set ws = Worksheets.Add
+  ws.Name = "Cache_Info"
+
+  With ws
+    .Cells(CountRow, 1).Value = "Cache Index"
+    .Cells(CountRow, 2).Value = "Command Text"
+    .Cells(CountRow, 3).Value = "Command Type"
+    .Cells(CountRow, 4).Value = "Connection"
+    .Cells(CountRow, 5).Value = "Memory Used (kb)"
+    .Cells(CountRow, 6).Value = "Missing Items Limit"
+    .Cells(CountRow, 7).Value = "Record Count"
+    .Cells(CountRow, 8).Value = "Refresh Date"
+    .Cells(CountRow, 9).Value = "Refresh Period"
+    .Cells(CountRow, 10).Value = "Source Data File"
+    .Cells(CountRow, 11).Value = "Source Type"
+    .Rows(1).EntireRow.Font.Bold = True
+  End With
+
+  CountRow = CountRow + 1
+
+    For Each pc In wb.PivotCaches
+      With ws
+        On Error Resume Next
+        .Cells(CountRow, 1).Value = pc.Index
+        .Cells(CountRow, 2).Value = pc.CommandText
+        .Cells(CountRow, 3).Value = pc.CommandType
+        .Cells(CountRow, 4).Value = pc.Connection
+        .Cells(CountRow, 5).Value = pc.MemoryUsed / 1000
+        .Cells(CountRow, 6).Value = pc.MissingItemsLimit
+        .Cells(CountRow, 7).Value = pc.RecordCount
+        .Cells(CountRow, 8).Value = pc.RefreshDate
+        .Cells(CountRow, 9).Value = pc.RefreshPeriod
+        .Cells(CountRow, 10).Value = pc.SourceDataFile
+        .Cells(CountRow, 11).Value = pc.SourceType
+      End With
+      CountRow = CountRow + 1
+    Next pc
+
+End Sub
+‘====================================
+‘13.24. Resetting the Print Area to Include the Entire Pivot Table 
+Sub SetPivotPrintArea()
+Dim ws As Worksheet
+Dim pt As PivotTable
+
+  Set ws = ActiveSheet
+  Set pt = ws.PivotTables(1)
+  
+  With ws.PageSetup
+    .PrintTitleRows = ""
+    .PrintTitleColumns = ""
+    .PrintArea = pt.TableRange2.Address
+  End With
+  
+  pt.PrintTitles = True
+  ws.PrintOut Preview:=True
+
+End Sub
+‘====================================
+‘13.25. Printing the Pivot Table for Each Page Field
+Sub PrintPivotPages()
+  Dim pt As PivotTable
+  Dim pf As PivotField
+  Dim pi As PivotItem
+  Dim ws As Worksheet
+  On Error Resume Next
+
+  Set ws = ActiveSheet
+  Set pt = ws.PivotTables(1)
+  Set pf = pt.PageFields(1)
+
+  For Each pi In pf.PivotItems
+    pt.PivotFields(pf.Name).CurrentPage = pi.Name
+    ws.PrintOut Preview:=True
+  Next pi
+End Sub
+‘====================================
+Sub PrintPivotChartPages()
+  Dim pt As PivotTable
+  Dim pf As PivotField
+  Dim pi As PivotItem
+  Dim ch As Chart
+  On Error Resume Next
+
+  Set ch = ActiveChart
+  Set pt = ch.PivotLayout.PivotTable
+  Set pf = pt.PageFields(1)
+  
+  For Each pi In pf.PivotItems
+    pt.PivotFields(pf.Name).CurrentPage = pi.Name
+    ch.PrintOut Preview:=True
+  Next pi
+End Sub
+‘====================================
+‘13.26. Reformatting Pivot Charts After Changing the Pivot Table 
+Private Sub Worksheet_PivotTableUpdate(ByVal Target As PivotTable)
+  ReformatChart
+End Sub
+‘====================================
+‘13.27. Scrolling Through Page Field Items on a Pivot Chart
+Sub PivotPageNext()
+  Dim CountPI As Long
+  Dim i As Long
+  Dim pt As PivotTable
+  Dim pf As PivotField
+  Dim pi As PivotItem
+  
+  Set pt = ActiveChart.PivotLayout.PivotTable
+  Set pf = pt.PageFields(1)
+  CountPI = 1
+  i = 1
+  
+  For Each pi In pf.PivotItems
+    If pf.CurrentPage.Name = "(All)" Then
+      CountPI = 0
+      Exit For
+    End If
+    If pi.Name = pf.CurrentPage.Name Then
+        Exit For
+    End If
+    CountPI = CountPI + 1
+  Next pi
+  
+  For i = CountPI + 1 To pf.PivotItems.Count + 1
+    On Error Resume Next
+    If i = pf.PivotItems.Count + 1 Then
+      pf.CurrentPage = "(All)"
+      Exit For
+    End If
+    pf.CurrentPage = pf.PivotItems(i).Name
+      If Err.Number = 0 Then
+        Exit For
+      End If
+  Next i
+End Sub
+  
+Sub PivotPagePrev()
+  Dim CountPI As Long
+  Dim i As Long
+  Dim pt As PivotTable
+  Dim pf As PivotField
+  Dim pi As PivotItem
+  
+  Set pt = ActiveChart.PivotLayout.PivotTable
+  Set pf = pt.PageFields(1)
+  CountPI = 1
+  
+  For Each pi In pf.PivotItems
+    If pf.CurrentPage.Name = "(All)" Then
+      CountPI = pf.PivotItems.Count + 1
+      Exit For
+    End If
+    If pi.Name = pf.CurrentPage.Name Then Exit For
+    CountPI = CountPI + 1
+  Next pi
+  
+  For i = CountPI - 1 To 0 Step -1
+    On Error Resume Next
+    pf.CurrentPage = pf.PivotItems(i).Name
+      If Err.Number = 0 Then Exit For
+    If i = 0 Then
+      pf.CurrentPage = "(All)"
+      Exit For
+    End If
+  Next i
+End Sub
+
+
+
